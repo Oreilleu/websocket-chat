@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💬 Messagerie Simple</title>
+    <script src="/socket.io/socket.io.js"></script>
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💬 Websocket chat</h1>
+            <div class="status" id="status">Connexion...</div>
+        </div>
+
+        <div class="login-screen" id="loginScreen">
+            <h2>Rejoindre le chat</h2>
+            <div class="login-form">
+                <input type="text" id="usernameInput" placeholder="Votre nom d'utilisateur" maxlength="20">
+                <button onclick="joinChat()">Se connecter</button>
+            </div>
+            <div id="loginError" class="error" style="display: none;"></div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="main-content">
+                <div class="users-sidebar">
+                    <h3>Utilisateurs en ligne</h3>
+                    <div id="usersList"></div>
+                </div>
+                <div class="chat-area">
+                    <div class="messages" id="messages"></div>
+                    <div class="typing-indicator" id="typingIndicator" style="display: none;"></div>
+                    <div class="input-area">
+                        <div class="input-form">
+                            <input type="text" id="messageInput" class="message-input" placeholder="Tapez votre message..." maxlength="500">
+                            <button onclick="sendMessage()" class="send-button">Envoyer</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentUser = null;
+        let typingTimer = null;
+        let isTyping = false;
+
+        const loginScreen = document.getElementById('loginScreen');
+        const chatContainer = document.getElementById('chatContainer');
+        const usernameInput = document.getElementById('usernameInput');
+        const messageInput = document.getElementById('messageInput');
+        const messages = document.getElementById('messages');
+        const usersList = document.getElementById('usersList');
+        const status = document.getElementById('status');
+        const loginError = document.getElementById('loginError');
+        const typingIndicator = document.getElementById('typingIndicator');
+
+        function joinChat() {
+            const username = usernameInput.value.trim();
+            if (!username) {
+                showError('Veuillez entrer un nom d\'utilisateur');
+                return;
+            }
+            socket.emit('join', username);
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            socket.emit('sendMessage', text);
+            messageInput.value = '';
+            stopTyping();
+        }
+
+        messageInput.addEventListener('input', () => {
+            if (!isTyping) {
+                isTyping = true;
+                socket.emit('typing');
+            }
+
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+                stopTyping();
+            }, 1000);
+        });
+
+        function stopTyping() {
+            if (isTyping) {
+                isTyping = false;
+                socket.emit('stopTyping');
+            }
+        }
+
+        usernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinChat();
+        });
+
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        function showError(message) {
+            loginError.textContent = message;
+            loginError.style.display = 'block';
+            setTimeout(() => {
+                loginError.style.display = 'none';
+            }, 5000);
+        }
+
+        function addMessage(message, isOwn = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isOwn ? 'own' : ''} ${message.username === 'Système' ? 'system' : ''}`;
+            
+            if (message.username === 'Système') {
+                messageDiv.innerHTML = `<div class="message-text">${message.text}</div>`;
+            } else {
+                const time = new Date(message.timestamp).toLocaleTimeString('fr-FR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="username">${message.username}</span>
+                        <span class="timestamp">${time}</span>
+                    </div>
+                    <div class="message-text">${message.text}</div>
+                `;
+            }
+            
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateUsersList(users) {
+            usersList.innerHTML = '';
+            users.forEach(user => {
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item';
+                userDiv.innerHTML = `
+                    <div class="user-status"></div>
+                    <span>${user.username}</span>
+                `;
+                usersList.appendChild(userDiv);
+            });
+        }
+
+        socket.on('connect', () => {
+            status.textContent = 'Connecté';
+        });
+
+        socket.on('disconnect', () => {
+            status.textContent = 'Déconnecté';
+        });
+
+        socket.on('joined', (user) => {
+            currentUser = user;
+            loginScreen.style.display = 'none';
+            chatContainer.classList.add('active');
+            status.textContent = `Connecté en tant que ${user.username}`;
+            messageInput.focus();
+        });
+
+        socket.on('error', (message) => {
+            showError(message);
+        });
+
+        socket.on('messageHistory', (historyMessages) => {
+            historyMessages.forEach(message => {
+                addMessage(message, message.username === currentUser?.username);
+            });
+        });
+
+        socket.on('newMessage', (message) => {
+            addMessage(message, message.username === currentUser?.username);
+        });
+
+        socket.on('usersList', (users) => {
+            updateUsersList(users);
+        });
+
+        socket.on('userTyping', (username) => {
+            typingIndicator.textContent = `${username} est en train d'écrire...`;
+            typingIndicator.style.display = 'block';
+        });
+
+        socket.on('userStoppedTyping', (username) => {
+            typingIndicator.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
