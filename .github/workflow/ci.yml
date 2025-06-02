@@ -1,11 +1,5 @@
 name: Build Pipeline
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
 jobs:
   build:
     name: Build
